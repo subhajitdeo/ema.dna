@@ -1,5 +1,5 @@
-// ==================== script.js - FINAL HARDENED VERSION ====================
-// Includes: choices validation, hard fallback, debug log, speak validation, memory, command router
+// ==================== script.js - FINAL WITH TYPING ANIMATION & MODEL SELECTOR ====================
+// Features: voice, local commands, memory, weather, site opener, markdown, typing effect, model switching
 
 // ---------- DOM Elements ----------
 const chatMessages = document.getElementById('chatMessages');
@@ -14,6 +14,7 @@ const voiceStatusSpan = document.getElementById('voiceStatus');
 const aiOrb = document.getElementById('aiOrb');
 const soundWave = document.getElementById('soundWave');
 const continuousModeToggle = document.getElementById('continuousModeToggle');
+const modelSelect = document.getElementById('modelSelect');
 
 // ---------- App State ----------
 let openRouterApiKey = localStorage.getItem('zara_openrouter_key') || '';
@@ -24,7 +25,7 @@ let continuousMode = true;
 let isSpeaking = false;
 let pendingRestart = false;
 
-// ---------- Memory System (persistent) ----------
+// ---------- Memory System ----------
 let zaraMemory = JSON.parse(localStorage.getItem('zara_memory')) || {
     name: "Subha",
     interests: ["technology", "AI"],
@@ -32,10 +33,7 @@ let zaraMemory = JSON.parse(localStorage.getItem('zara_memory')) || {
     lastSeen: Date.now(),
     conversationCount: 0
 };
-
-function saveMemory() {
-    localStorage.setItem('zara_memory', JSON.stringify(zaraMemory));
-}
+function saveMemory() { localStorage.setItem('zara_memory', JSON.stringify(zaraMemory)); }
 saveMemory();
 
 // ---------- Voice Loading ----------
@@ -43,6 +41,16 @@ let availableVoices = [];
 function loadVoices() { availableVoices = speechSynthesis.getVoices(); }
 loadVoices();
 if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = loadVoices;
+
+// ---------- Model Selector Persistence ----------
+if (modelSelect) {
+    const savedModel = localStorage.getItem('zara_selected_model');
+    if (savedModel) modelSelect.value = savedModel;
+    modelSelect.addEventListener('change', () => {
+        localStorage.setItem('zara_selected_model', modelSelect.value);
+        addSystemMessage(`🧠 Model switched to ${modelSelect.options[modelSelect.selectedIndex].text}`, false);
+    });
+}
 
 // ---------- Site Map ----------
 const siteMap = {
@@ -55,7 +63,7 @@ const siteMap = {
     wikipedia: 'https://wikipedia.org'
 };
 
-// ---------- UI Helpers (Markdown enabled) ----------
+// ---------- UI Helpers (Markdown + Typing Animation) ----------
 function renderMessage(text, isUser, toolData = null, isError = false) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
@@ -66,17 +74,45 @@ function renderMessage(text, isUser, toolData = null, isError = false) {
     if (toolData?.sourceLinks?.length) {
         sourceHtml = `<div class="source-links">${toolData.sourceLinks.map(link => `<a href="${link.url}" target="_blank" class="source-link"><i class="fas fa-external-link-alt"></i> ${link.label}</a>`).join('')}</div>`;
     }
-    let contentHtml = text;
-    if (!isUser && typeof marked !== 'undefined') {
-        contentHtml = marked.parse(text);
-    }
     messageDiv.innerHTML = `
         <div class="avatar">${avatarIcon}</div>
-        <div class="content">${contentHtml}${sourceHtml}</div>
+        <div class="content"><div class="message-text"></div>${sourceHtml}</div>
         <div class="timestamp">${timestamp}</div>
     `;
     chatMessages.appendChild(messageDiv);
-    messageDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const contentDiv = messageDiv.querySelector('.message-text');
+    
+    if (isUser || isError) {
+        contentDiv.innerHTML = marked.parse(text);
+        messageDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } else {
+        // Typing animation for AI responses
+        typeText(contentDiv, text, () => {
+            messageDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+    }
+    return messageDiv;
+}
+
+async function typeText(container, fullText, onComplete) {
+    container.innerHTML = '';
+    let i = 0;
+    const speed = 15; // milliseconds per character
+    function addChar() {
+        if (i < fullText.length) {
+            // Render markdown incrementally? Simpler: just append raw text then re-render at end
+            // To avoid complexity, we'll append raw characters and then at the end parse markdown.
+            // But markdown needs full text. So we'll show raw text gradually, then replace with markdown at the end.
+            container.textContent = fullText.substring(0, i + 1);
+            i++;
+            setTimeout(addChar, speed);
+        } else {
+            // Final render with markdown
+            container.innerHTML = marked.parse(fullText);
+            if (onComplete) onComplete();
+        }
+    }
+    addChar();
 }
 
 function addSystemMessage(text, isError = false) { renderMessage(text, false, null, isError); }
@@ -90,7 +126,7 @@ function addMessage(text, isUser, toolData = null) {
     saveMemory();
 }
 
-// ---------- Speech with queue protection ----------
+// ---------- Speech ----------
 function speakText(text) {
     if (!synth) return;
     if (synth.speaking) synth.cancel();
@@ -115,7 +151,7 @@ function speakText(text) {
     synth.speak(utterance);
 }
 
-// ---------- Weather (local fetch) ----------
+// ---------- Weather ----------
 async function fetchDetailedWeather(location) {
     try {
         const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
@@ -162,7 +198,7 @@ async function executeToolCommand(toolObj) {
     if (tool === 'news') setTimeout(() => window.open('https://www.reuters.com/', '_blank'), 1000);
 }
 
-// ==================== COMMAND HANDLERS ====================
+// ==================== LOCAL COMMAND HANDLERS ====================
 const commandHandlers = [];
 
 function handleTime(text) {
@@ -300,7 +336,7 @@ function handleLocalCommand(text) {
     return false;
 }
 
-// ==================== AI CALL WITH ROBUST ERROR HANDLING ====================
+// ==================== AI CALL WITH TYPING & MODEL ====================
 async function askZara(userPrompt) {
     if (handleLocalCommand(userPrompt)) return;
 
@@ -328,13 +364,7 @@ For weather, include query. For normal chat, tool "none". Never add extra text.`
             { role: "user", content: userPrompt }
         ];
 
-        // You can change the model here if needed (examples below)
-        // Model options (free on OpenRouter):
-        // - "deepseek/deepseek-chat-v3-0324:free" (current)
-        // - "mistralai/mistral-7b-instruct:free"
-        // - "google/gemma-3-27b-it:free"
-        // - "meta-llama/llama-3.3-70b-instruct:free"
-        const model = "deepseek/deepseek-chat-v3-0324:free";
+        const model = localStorage.getItem('zara_selected_model') || "deepseek/deepseek-chat-v3-0324:free";
 
         const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
@@ -344,21 +374,12 @@ For weather, include query. For normal chat, tool "none". Never add extra text.`
                 "HTTP-Referer": window.location.origin,
                 "X-Title": "Zara AI Assistant"
             },
-            body: JSON.stringify({
-                model: model,
-                messages,
-                temperature: 0.7,
-                max_tokens: 700
-            })
+            body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 700 })
         });
 
         if (!response.ok) throw new Error(`API Error ${response.status}`);
         const data = await response.json();
-
-        // CRITICAL: Validate that choices exist
-        if (!data.choices || !data.choices.length) {
-            throw new Error("No AI response received (empty choices)");
-        }
+        if (!data.choices || !data.choices.length) throw new Error("No AI response received");
 
         let aiRaw = data.choices[0].message.content;
         console.log("RAW AI RESPONSE:", aiRaw);
@@ -366,22 +387,12 @@ For weather, include query. For normal chat, tool "none". Never add extra text.`
         aiRaw = aiRaw.replace(/```json/g, '').replace(/```/g, '').trim();
         let aiJson = null;
         const match = aiRaw.match(/\{[\s\S]*\}/);
-        if (match) {
-            try { aiJson = JSON.parse(match[0]); } catch(e) { console.warn("JSON parse error", e); }
-        }
+        if (match) try { aiJson = JSON.parse(match[0]); } catch(e) { console.warn("JSON parse error", e); }
 
-        // Hard fallback
         if (!aiJson) {
-            aiJson = {
-                tool: "none",
-                speak: (typeof aiRaw === "string" && aiRaw.trim().length) ? aiRaw.trim() : "I couldn't generate a proper response."
-            };
+            aiJson = { tool: "none", speak: (typeof aiRaw === "string" && aiRaw.trim().length) ? aiRaw.trim() : "I couldn't generate a proper response." };
         }
-
-        // Validate speak property
-        if (!aiJson.speak || typeof aiJson.speak !== "string") {
-            aiJson.speak = "I couldn't understand the response properly.";
-        }
+        if (!aiJson.speak || typeof aiJson.speak !== "string") aiJson.speak = "I couldn't understand the response properly.";
 
         const validTools = ['weather', 'news', 'youtube', 'wikipedia', 'google', 'open_site', 'none'];
         if (!validTools.includes(aiJson.tool)) aiJson.tool = 'none';
