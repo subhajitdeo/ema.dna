@@ -1,13 +1,13 @@
 """
 NSE Nifty 500 Trend Strength Scanner
-Fixed version: .NS suffix, robust error handling, proper volume conversion.
-Outputs to data/results.json for frontend dashboard.
+Fixed: .NS suffix for yfinance, volume conversion, error logging, commit permissions.
 """
 
 import json
 import time
 import logging
 import sys
+import os
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -54,9 +54,9 @@ def load_symbols(file_path: str) -> List[str]:
 def fetch_stock_data(symbol: str, period: str = "3y") -> Optional[pd.DataFrame]:
     """
     Fetch daily OHLCV for NSE stock using yfinance.
-    CRITICAL: Appends .NS suffix for Indian market.
+    CRITICAL FIX: Appends .NS suffix for Indian market.
     """
-    ticker = f"{symbol}.NS"   # FIX 1: Add .NS suffix
+    ticker = f"{symbol}.NS"   # <--- THIS IS THE FIX
     for attempt in range(MAX_RETRIES):
         try:
             stock = yf.Ticker(ticker)
@@ -138,7 +138,7 @@ def compute_metrics(df: pd.DataFrame, symbol: str) -> Optional[Dict]:
             latest['Close'] > latest['EMA20'] > latest['EMA50'] > latest['EMA100'] > latest['EMA200']
         )
         
-        # FIX 2: Safely convert volume to int
+        # Safely convert volume to int
         volume_int = int(latest['Volume']) if not pd.isna(latest['Volume']) else 0
         
         return {
@@ -274,7 +274,6 @@ def run_scanner():
     }
     
     # Ensure data directory exists
-    import os
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
     
     with open(OUTPUT_FILE, 'w') as f:
