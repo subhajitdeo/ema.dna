@@ -3,77 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Zara.ai | Futuristic AI Assistant</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- DOMPurify for XSS prevention -->
-    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <title>NSE Trend Strength Scanner | Nifty 500 EMA Dashboard</title>
     <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body>
-    <div class="glass-panel container">
-        <div class="header">
-            <div class="orb-container">
-                <div class="ai-orb" id="aiOrb">
-                    <div class="orb-core"></div>
-                    <div class="orb-ring"></div>
-                    <div class="pulse-ring"></div>
-                </div>
-                <div class="sound-wave" id="soundWave">
-                    <span></span><span></span><span></span><span></span><span></span>
-                </div>
+    <div class="glass-container">
+        <!-- Header -->
+        <div class="dashboard-header">
+            <div class="logo-section">
+                <i class="fas fa-chart-line"></i>
+                <h1>NSE Trend Strength Scanner</h1>
+                <span class="badge">Nifty 500</span>
             </div>
-            <div class="title-area">
-                <h1>ZARA<span>.ai</span></h1>
-                <p>neural interface • active</p>
-            </div>
-            <div class="controls">
-                <div class="api-status">
-                    <i class="fas fa-key"></i>
-                    <input type="password" id="apiKeyInput" placeholder="OpenRouter API Key" autocomplete="off">
-                    <button id="saveApiKeyBtn" class="glass-btn small"><i class="fas fa-save"></i></button>
-                </div>
-                <div class="model-selector">
-                    <i class="fas fa-brain"></i>
-                    <select id="modelSelect">
-                        <option value="deepseek/deepseek-chat-v3-0324:free">DeepSeek (free)</option>
-                        <option value="ring-2.6-1t:free" selected>Ring-2.6-1T (free)</option>
-                        <option value="google/gemma-3-27b-it:free">Google Gemma 3 (free)</option>
-                        <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (free)</option>
-                    </select>
-                </div>
+            <div class="header-actions">
+                <button id="refreshBtn" class="btn-glass">
+                    <i class="fas fa-sync-alt"></i> Refresh Data
+                </button>
             </div>
         </div>
 
-        <div class="chat-panel" id="chatPanel">
-            <div class="chat-messages" id="chatMessages"></div>
+        <!-- Market Summary Cards -->
+        <div class="summary-grid" id="summaryGrid">
+            <div class="summary-card">
+                <i class="fas fa-chart-simple"></i>
+                <div class="summary-info">
+                    <span class="label">Total Scanned</span>
+                    <span class="value" id="totalScanned">--</span>
+                </div>
+            </div>
+            <div class="summary-card">
+                <i class="fas fa-bullhorn"></i>
+                <div class="summary-info">
+                    <span class="label">Bullish Aligned</span>
+                    <span class="value" id="bullishCount">--</span>
+                </div>
+            </div>
+            <div class="summary-card">
+                <i class="fas fa-chart-line"></i>
+                <div class="summary-info">
+                    <span class="label">Avg Trend Score</span>
+                    <span class="value" id="avgScore">--</span>
+                </div>
+            </div>
+            <div class="summary-card">
+                <i class="fas fa-clock"></i>
+                <div class="summary-info">
+                    <span class="label">Last Update</span>
+                    <span class="value" id="lastUpdated">--</span>
+                </div>
+            </div>
         </div>
 
-        <div class="thinking-indicator" id="thinkingIndicator">
-            <div class="thinking-dots"><span></span><span></span><span></span></div>
-            <span id="thinkingText">Zara is thinking...</span>
+        <!-- Controls -->
+        <div class="controls-bar">
+            <div class="search-box">
+                <i class="fas fa-search"></i>
+                <input type="text" id="searchInput" placeholder="Search symbol...">
+            </div>
+            <div class="filter-toggle">
+                <button id="filterBullishBtn" class="filter-btn">
+                    <i class="fas fa-filter"></i> Bullish Only
+                </button>
+                <button id="resetFilterBtn" class="filter-btn reset">
+                    <i class="fas fa-undo-alt"></i> Reset
+                </button>
+            </div>
+            <div class="sort-hint">
+                <i class="fas fa-arrow-up-wide-short"></i> Click column to sort
+            </div>
         </div>
 
-        <div class="input-area">
-            <button id="micBtn" class="mic-btn glass-btn"><i class="fas fa-microphone"></i></button>
-            <input type="text" id="userInput" placeholder="Ask me anything..." autocomplete="off">
-            <button id="sendBtn" class="send-btn glass-btn"><i class="fas fa-paper-plane"></i></button>
+        <!-- Top Stocks Section -->
+        <div class="section-title">
+            <i class="fas fa-trophy"></i>
+            <h2>Top Ranked Stocks</h2>
         </div>
-        <div class="voice-status" id="voiceStatus"></div>
-        
-        <div class="continuous-toggle">
-            <label class="switch-label">
-                <span class="toggle-text"><i class="fas fa-microphone-alt"></i> Continuous Mode</span>
-                <label class="switch">
-                    <input type="checkbox" id="continuousModeToggle" checked>
-                    <span class="slider round"></span>
-                </label>
-            </label>
+        <div class="top-stocks-grid" id="topStocksGrid">
+            <!-- Dynamically populated -->
         </div>
 
-        <div class="footer-note">⚡ Zara • Memory enabled • Secure markdown • Typing animation</div>
+        <!-- Strong Bullish Setups -->
+        <div class="section-title">
+            <i class="fas fa-fire"></i>
+            <h2>Strong Bullish Setups</h2>
+        </div>
+        <div class="bullish-grid" id="bullishGrid">
+            <!-- Dynamically populated -->
+        </div>
+
+        <!-- Full Data Table -->
+        <div class="section-title">
+            <i class="fas fa-table-list"></i>
+            <h2>Complete Stock Rankings</h2>
+        </div>
+        <div class="table-wrapper">
+            <table id="stocksTable">
+                <thead>
+                    <tr>
+                        <th data-sort="rank">Rank <i class="sort-icon"></i></th>
+                        <th data-sort="symbol">Symbol <i class="sort-icon"></i></th>
+                        <th data-sort="price">Price <i class="sort-icon"></i></th>
+                        <th data-sort="ema20">EMA20 <i class="sort-icon"></i></th>
+                        <th data-sort="ema50">EMA50 <i class="sort-icon"></i></th>
+                        <th data-sort="ema100">EMA100 <i class="sort-icon"></i></th>
+                        <th data-sort="ema200">EMA200 <i class="sort-icon"></i></th>
+                        <th data-sort="trend_score">Trend Score <i class="sort-icon"></i></th>
+                        <th data-sort="daily_gain_pct">Daily Gain % <i class="sort-icon"></i></th>
+                        <th data-sort="volume">Volume <i class="sort-icon"></i></th>
+                        <th data-sort="status">Trend Status <i class="sort-icon"></i></th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr><td colspan="11" class="loading-cell"><div class="spinner"></div> Loading market data...</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
+
     <script src="script.js"></script>
 </body>
 </html>
