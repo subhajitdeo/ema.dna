@@ -1,6 +1,6 @@
 """
 NSE Nifty 500 Trend Strength Scanner
-Downloads bhavcopy CSV files from NSE archives, computes EMAs and trend scores.
+Uses yfinance with .squeeze() to avoid MultiIndex and Series truth issues.
 """
 
 import json
@@ -8,16 +8,16 @@ import time
 import logging
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, List, Optional
 import pandas as pd
-import requests
+import yfinance as yf
 from tqdm import tqdm
 
 SYMBOLS_FILE = "nifty500.txt"
 OUTPUT_FILE = "data/results.json"
 YEARS = 3
-REQUEST_DELAY = 0.2   # seconds between symbol processing
+DELAY = 0.3
 MAX_RETRIES = 2
 
 WEIGHTS = {
@@ -32,118 +32,90 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 def load_symbols():
-    """Load symbols from nifty500.txt (one per line)."""
     with open(SYMBOLS_FILE, 'r') as f:
         symbols = [line.strip().upper() for line in f if line.strip()]
     logger.info(f"Loaded {len(symbols)} symbols")
     return symbols
 
-def get_bhavcopy_dates(years=3):
-    """Generate list of trading dates (Mon-Fri) for the last N years."""
-    end = datetime.now()
-    start = end - timedelta(days=years*365 + 30)
-    dates = []
-    cur = start
-    while cur <= end:
-        if cur.weekday() < 5:  # Monday=0 ... Friday=4
-            dates.append(cur)
-        cur += timedelta(days=1)
-    return dates
-
-def download_bhavcopy_for_date(date_obj):
-    """Download bhavcopy CSV for a given date from NSE, return DataFrame or None."""
-    try:
-        date_str = date_obj.strftime("%d%m%Y")
-        year = date_obj.year
-        month_abbr = date_obj.strftime("%b").upper()
-        url = f"https://archives.nseindia.com/content/historical/EQUITIES/{year}/{month_abbr}/cm{date_str}bhav.csv.zip"
-        r = requests.get(url, timeout=15)
-        if r.status_code != 200:
-            return None
-        with open("temp_bhav.zip", "wb") as f:
-            f.write(r.content)
-        df = pd.read_csv("temp_bhav.zip")
-        os.remove("temp_bhav.zip")
-        return df
-    except Exception as e:
-        return None
-
 def fetch_stock_data(symbol: str) -> Optional[pd.DataFrame]:
     """
-    Build historical OHLCV for a single symbol by scanning bhavcopy files.
-    Returns DataFrame with columns: Open, High, Low, Close, Volume (all float/int).
+    Fetch OHLCV for a single symbol using yfinance.
+    Uses .squeeze() on 'Close' to get a clean Series for EMA calculations.
     """
-    trading_dates = get_bhavcopy_dates(YEARS)
-    records = []
-    for dt in trading_dates:
-        df_day = download_bhavcopy_for_date(dt)
-        if df_day is None:
-            continue
-        row = df_day[df_day["SYMBOL"] == symbol]
-        if not row.empty:
-            r = row.iloc[0]
-            records.append({
-                "Date": dt,
-                "Open": r["OPEN"],
-                "High": r["HIGH"],
-                "Low": r["LOW"],
-                "Close": r["CLOSE"],
-                "Volume": r["TOTTRDQTY"]
-            })
-        time.sleep(0.05)  # gentle throttling
-    if len(records) < 200:
-        logger.warning(f"{symbol}: only {len(records)} days, need 200+")
-        return None
-    df = pd.DataFrame(records)
-    df.set_index("Date", inplace=True)
-    df.sort_index(inplace=True)
-    # convert to numeric (already int/float, but safe)
-    for col in ["Open","High","Low","Close","Volume"]:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    df.dropna(subset=["Close"], inplace=True)
-    return df[["Open","High","Low","Close","Volume"]]
-
-def calculate_emas(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
-    df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
-    df['EMA100'] = df['Close'].ewm(span=100, adjust=False).mean()
-    df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
-    return df
+    ticker = f"{symbol}.NS"
+    for attempt in range(MAX_RETRIES):
+        try:
+            df = yf.download(ticker, period=f"{YEARS}y", progress=False, auto_adjust=True)
+            if df.empty or len(df) < 200:
+                logger.warning(f"{symbol}: insufficient data ({len(df)} days)")
+                return None
+            # Use .squeeze() to get a Series (if MultiIndex) – but we'll just work with df directly
+            # We'll extract Close as a Series later.
+            return df
+        except Exception as e:
+            logger.warning(f"{symbol} attempt {attempt+1} failed: {e}")
+            time.sleep(2)
+    return None
 
 def compute_metrics(df: pd.DataFrame, symbol: str) -> Optional[Dict]:
     try:
         if df is None or df.empty:
             return None
-        df = calculate_emas(df)
-        close = float(df['Close'].iloc[-1])
-        ema20 = float(df['EMA20'].iloc[-1])
-        ema50 = float(df['EMA50'].iloc[-1])
-        ema100 = float(df['EMA100'].iloc[-1])
-        ema200 = float(df['EMA200'].iloc[-1])
-        current_vol = float(df['Volume'].iloc[-1])
-        if any(pd.isna(x) for x in [ema20, ema50, ema100, ema200]):
+        
+        # Extract the Close price as a Series
+        close_series = df['Close'].squeeze()  # becomes a pandas Series
+        
+        # Calculate EMAs on the Series
+        ema20 = close_series.ewm(span=20, adjust=False).mean().iloc[-1]
+        ema50 = close_series.ewm(span=50, adjust=False).mean().iloc[-1]
+        ema100 = close_series.ewm(span=100, adjust=False).mean().iloc[-1]
+        ema200 = close_series.ewm(span=200, adjust=False).mean().iloc[-1]
+        
+        # Latest close
+        latest_close = close_series.iloc[-1]
+        
+        # Convert to Python float
+        close_val = float(latest_close)
+        ema20_val = float(ema20)
+        ema50_val = float(ema50)
+        ema100_val = float(ema100)
+        ema200_val = float(ema200)
+        
+        if any(pd.isna(x) for x in [ema20_val, ema50_val, ema100_val, ema200_val]):
             return None
-        prev_close = float(df['Close'].iloc[-2]) if len(df) > 1 else close
-        daily_gain = (close - prev_close) / prev_close * 100
-        vol_series = df['Volume'].iloc[-21:-1]
+        
+        # Daily gain
+        prev_close = float(close_series.iloc[-2]) if len(close_series) > 1 else close_val
+        daily_gain = (close_val - prev_close) / prev_close * 100
+        
+        # Volume data – extract as Series then scalar
+        volume_series = df['Volume'].squeeze()
+        current_vol = float(volume_series.iloc[-1])
+        vol_series = volume_series.iloc[-21:-1]
         avg_vol = float(vol_series.mean()) if len(vol_series) >= 10 else current_vol
         rel_vol = current_vol / avg_vol if avg_vol > 0 else 1.0
-        ema_sep = (ema20 - ema200) / ema200 * 100
-        price_dist = (close - ema20) / ema20 * 100
-        if len(df) >= 6:
-            close_5d_ago = float(df['Close'].iloc[-6])
-            momentum = (close - close_5d_ago) / close_5d_ago * 100
+        
+        # Other metrics
+        ema_sep = (ema20_val - ema200_val) / ema200_val * 100
+        price_dist = (close_val - ema20_val) / ema20_val * 100
+        
+        if len(close_series) >= 6:
+            close_5d_ago = float(close_series.iloc[-6])
+            momentum = (close_val - close_5d_ago) / close_5d_ago * 100
         else:
             momentum = daily_gain
-        is_bullish = (close > ema20) and (ema20 > ema50) and (ema50 > ema100) and (ema100 > ema200)
+        
+        # Bullish alignment (all scalars)
+        is_bullish = (close_val > ema20_val) and (ema20_val > ema50_val) and \
+                     (ema50_val > ema100_val) and (ema100_val > ema200_val)
+        
         return {
             "symbol": symbol,
-            "price": round(close, 2),
-            "ema20": round(ema20, 2),
-            "ema50": round(ema50, 2),
-            "ema100": round(ema100, 2),
-            "ema200": round(ema200, 2),
+            "price": round(close_val, 2),
+            "ema20": round(ema20_val, 2),
+            "ema50": round(ema50_val, 2),
+            "ema100": round(ema100_val, 2),
+            "ema200": round(ema200_val, 2),
             "daily_gain_pct": round(daily_gain, 2),
             "volume": int(current_vol),
             "rel_volume": round(rel_vol, 2),
@@ -189,20 +161,20 @@ def add_scores(stocks):
 
 def main():
     start = datetime.now()
-    logger.info("Starting NSE scanner using bhavcopy (direct NSE EOD files)")
+    logger.info("Starting NSE scanner (yfinance + .squeeze())")
     symbols = load_symbols()
     if not symbols:
         sys.exit(1)
     all_stocks, failed = [], []
-    for sym in tqdm(symbols, desc="Processing"):
-        time.sleep(REQUEST_DELAY)
+    for sym in tqdm(symbols, desc="Scanning"):
+        time.sleep(DELAY)
         df = fetch_stock_data(sym)
         if df is None:
             failed.append(sym)
             continue
-        metrics = compute_metrics(df, sym)
-        if metrics:
-            all_stocks.append(metrics)
+        m = compute_metrics(df, sym)
+        if m:
+            all_stocks.append(m)
         else:
             failed.append(sym)
     logger.info(f"Successful: {len(all_stocks)}, Failed: {len(failed)}")
