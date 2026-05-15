@@ -5,7 +5,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EMA Scanner</title>
-
     <link rel="stylesheet" href="style.css">
 </head>
 
@@ -13,39 +12,14 @@
 
     <div class="container">
 
-        <h1>📈 NSE EMA Scanner</h1>
-
-        <div class="topbar">
-            <input type="text" id="searchInput" placeholder="Search stock...">
-
-            <button onclick="loadData()">
-                Refresh
-            </button>
+        <div class="header">
+            <h1>NSE EMA Scanner</h1>
+            <button onclick="loadData()">Refresh</button>
         </div>
 
         <div id="lastUpdated"></div>
 
-        <table>
-
-            <thead>
-                <tr>
-                    <th>Rank</th>
-                    <th>Stock</th>
-                    <th>Price</th>
-                    <th>EMA20</th>
-                    <th>EMA50</th>
-                    <th>EMA100</th>
-                    <th>EMA200</th>
-                    <th>Score</th>
-                    <th>Trend</th>
-                </tr>
-            </thead>
-
-            <tbody id="tableBody">
-
-            </tbody>
-
-        </table>
+        <div id="stockList"></div>
 
     </div>
 
