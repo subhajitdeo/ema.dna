@@ -1,13 +1,94 @@
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+body{
+    background:#0f172a;
+    color:white;
+    font-family:Arial,sans-serif;
+    padding:15px;
+}
+
+.container{
+    max-width:900px;
+    margin:auto;
+}
+
+.header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:20px;
+}
+
+h1{
+    font-size:28px;
+}
+
+button{
+    background:#22c55e;
+    color:white;
+    border:none;
+    padding:10px 18px;
+    border-radius:10px;
+    cursor:pointer;
+    font-weight:bold;
+}
+
+button:hover{
+    opacity:0.9;
+}
+
+#lastUpdated{
+    margin-bottom:20px;
+    color:#94a3b8;
+}
+
+.stock-card{
+    background:#111827;
+    border-radius:18px;
+    margin-bottom:15px;
+    overflow:hidden;
+    border:1px solid #1e293b;
+}
+
+.stock-header{
+    padding:18px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    cursor:pointer;
+}
+
+.stock-header h2{
+    margin-bottom:8px;
+    font-size:22px;
+}
+
+.stock-header h3{
+    color:#22c55e;
+    font-size:24px;
+}
+
+.details{
+    display:none;
+    padding:20px;
+    background:#0b1220;
+    border-top:1px solid #1e293b;
+}
+
 .chart-container{
     position:relative;
-    height:80px;
+    height:90px;
     margin-top:20px;
-    margin-bottom:20px;
+    margin-bottom:25px;
 }
 
 .line{
     position:absolute;
-    top:40px;
+    top:42px;
     left:5%;
     width:90%;
     height:4px;
@@ -17,7 +98,7 @@
 
 .dot{
     position:absolute;
-    top:28px;
+    top:30px;
     width:26px;
     height:26px;
     border-radius:50%;
@@ -25,7 +106,7 @@
 }
 
 .price{
-    background:#ffffff;
+    background:white;
     border:3px solid #3b82f6;
 }
 
@@ -34,7 +115,7 @@
 }
 
 .ema50{
-    background:#a78bfa;
+    background:#8b5cf6;
 }
 
 .ema100{
@@ -48,13 +129,19 @@
 .legend{
     display:flex;
     flex-direction:column;
-    gap:10px;
+    gap:12px;
+}
+
+.legend div{
+    display:flex;
+    align-items:center;
+    font-size:15px;
 }
 
 .legend-dot{
-    display:inline-block;
-    width:15px;
-    height:15px;
+    width:16px;
+    height:16px;
     border-radius:50%;
     margin-right:10px;
+    display:inline-block;
 }
