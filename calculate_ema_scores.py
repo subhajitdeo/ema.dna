@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 # Paths
-DATA_FOLDER = "data/processed"
+DATA_FOLDER = "data/"
 OUTPUT_FOLDER = "data/scores"
 
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
