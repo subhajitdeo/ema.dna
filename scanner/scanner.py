@@ -1,6 +1,7 @@
 import pandas as pd
 import json
 import os
+import requests
 from datetime import datetime
 
 # Ensure data directory exists
@@ -9,12 +10,59 @@ os.makedirs("data", exist_ok=True)
 # Load stock list
 stocks = pd.read_csv("scanner/nifty500.csv")
 
+# GitHub raw data URL
+GITHUB_RAW_BASE = "https://raw.githubusercontent.com/subhajitdeo/shape.dna/main/data"
+
+def fetch_stock_data(symbol):
+    """Fetch stock data directly from GitHub"""
+    url = f"{GITHUB_RAW_BASE}/{symbol}.NS.json"
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except Exception as e:
+        print(f"  Fetch error: {e}")
+        return None
+
+def parse_candles(data):
+    """Parse Yahoo Finance JSON format into rows"""
+    rows = []
+    
+    if isinstance(data, dict):
+        result = data.get('chart', {}).get('result', [])
+        if not result:
+            return []
+        quotes = result[0].get('indicators', {}).get('quote', [{}])[0]
+        timestamps = result[0].get('timestamp', [])
+        for i in range(len(timestamps)):
+            o = quotes.get('open', [None])[i]
+            h = quotes.get('high', [None])[i]
+            l = quotes.get('low', [None])[i]
+            c = quotes.get('close', [None])[i]
+            v = quotes.get('volume', [None])[i]
+            if None not in (o, h, l, c, v):
+                rows.append({
+                    'time': pd.Timestamp(timestamps[i], unit='s').strftime('%Y-%m-%d'),
+                    'open': float(o), 'high': float(h), 'low': float(l),
+                    'close': float(c), 'volume': int(v)
+                })
+    return rows
+
+def calculate_ema(closes, period):
+    """Calculate EMA"""
+    if len(closes) < period:
+        return closes[-1] if closes else 0
+    alpha = 2 / (period + 1)
+    result = [closes[0]]
+    for val in closes[1:]:
+        result.append(alpha * val + (1 - alpha) * result[-1])
+    return result[-1]
+
 results = []
 
-# Path to your processed data from calculate.py
-PROCESSED_DATA_DIR = "data/processed"
-
-print(f"📊 Scanning stocks from {PROCESSED_DATA_DIR}")
+print(f"📊 Scanning stocks from GitHub...")
 print(f"📈 Total stocks in NIFTY 500: {len(stocks)}")
 
 for index, row in stocks.iterrows():
@@ -22,24 +70,22 @@ for index, row in stocks.iterrows():
     try:
         print(f"[{index+1}/{len(stocks)}] Scanning {symbol}...", end=" ")
         
-        # Read the processed JSON file (created by calculate.py)
-        json_path = os.path.join(PROCESSED_DATA_DIR, f"{symbol}.json")
+        # Fetch data directly from GitHub
+        data = fetch_stock_data(symbol)
         
-        if not os.path.exists(json_path):
-            print(f"❌ No processed data found")
+        if not data:
+            print(f"❌ No data found")
             continue
         
-        with open(json_path, 'r') as f:
-            data = json.load(f)
+        # Parse candles
+        candles = parse_candles(data)
         
-        # Extract data from the JSON
-        candles = data.get('candles', [])
         if len(candles) < 200:
             print(f"⚠️ Insufficient candles ({len(candles)}), skipping")
             continue
         
         # Get latest prices
-        latest_close = data['latest_price']
+        latest_close = candles[-1]['close']
         
         # Calculate change from previous day
         if len(candles) >= 2:
@@ -52,16 +98,14 @@ for index, row in stocks.iterrows():
         latest_high = candles[-1]['high']
         latest_low = candles[-1]['low']
         
-        # Get EMAs from indicators (already calculated in your JSON)
-        indicators = data.get('indicators', {})
-        
-        ema20 = indicators.get('EMA20', {}).get('value', latest_close)
-        ema50 = indicators.get('EMA50', {}).get('value', latest_close)
-        ema100 = indicators.get('EMA100', {}).get('value', latest_close)
-        ema200 = indicators.get('EMA200', {}).get('value', latest_close)
+        # Calculate EMAs
+        closes = [c['close'] for c in candles]
+        ema20 = calculate_ema(closes, 20)
+        ema50 = calculate_ema(closes, 50)
+        ema100 = calculate_ema(closes, 100)
+        ema200 = calculate_ema(closes, 200)
         
         # ----- Score out of 100 based on sequence + symmetric gaps -----
-        # Check if LTP > EMA20 > EMA50 > EMA100 > EMA200
         if latest_close > ema20 > ema50 > ema100 > ema200:
             gaps = [
                 latest_close - ema20,
@@ -69,13 +113,9 @@ for index, row in stocks.iterrows():
                 ema50 - ema100,
                 ema100 - ema200
             ]
-            # All gaps must be positive (already true from sequence)
             mean_gap = sum(gaps) / len(gaps)
-            # Symmetry: how close each gap is to mean_gap
             deviations = [abs(g - mean_gap) for g in gaps]
             max_deviation = max(deviations)
-            # If max_deviation is 0, perfect symmetry. Else normalize.
-            # Score = 100 * (1 - (max_deviation / mean_gap)) but clip to 0-100
             if mean_gap > 0:
                 symmetry_score = max(0, 100 * (1 - (max_deviation / mean_gap)))
             else:
@@ -109,12 +149,12 @@ for index, row in stocks.iterrows():
             "ema_alignment": "Perfect" if latest_close > ema20 > ema50 > ema100 > ema200 else "Partial"
         })
         
-        print(f"✅ Score: {score}, Price: {latest_close}, Trend: {trend}")
+        print(f"✅ Score: {score}, Price: {latest_close}")
         
     except Exception as e:
         print(f"❌ Error: {e}")
 
-# Sort by score (higher = better symmetry + alignment)
+# Sort by score
 results.sort(key=lambda x: x["score"], reverse=True)
 
 # Add summary statistics
@@ -137,7 +177,7 @@ final_data = {
         "bearish_stocks": len(results) - bullish_count,
         "perfect_ema_alignment": perfect_alignment
     },
-    "top_10_stocks": results[:10],  # Top 10 highest scoring stocks
+    "top_10_stocks": results[:10],
     "data": results
 }
 
@@ -151,6 +191,7 @@ print(f"   Successfully analyzed: {len(results)}")
 print(f"   Average score: {round(avg_score, 2)}")
 print(f"   Bullish stocks: {bullish_count}")
 print(f"   Perfect EMA alignment: {perfect_alignment}")
-print(f"   Top stock: {results[0]['symbol']} with score {results[0]['score']}" if results else "   No stocks analyzed")
+if results:
+    print(f"   Top stock: {results[0]['symbol']} with score {results[0]['score']}")
 print(f"📁 Results saved to: data/results.json")
 print("="*60)
