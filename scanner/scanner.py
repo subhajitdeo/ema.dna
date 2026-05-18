@@ -14,15 +14,19 @@ results = []
 # Path to your processed data from calculate.py
 PROCESSED_DATA_DIR = "data/processed"
 
-for symbol in stocks["SYMBOL"]:
+print(f"📊 Scanning stocks from {PROCESSED_DATA_DIR}")
+print(f"📈 Total stocks in NIFTY 500: {len(stocks)}")
+
+for index, row in stocks.iterrows():
+    symbol = row["SYMBOL"]
     try:
-        print(f"Scanning {symbol}")
+        print(f"[{index+1}/{len(stocks)}] Scanning {symbol}...", end=" ")
         
         # Read the processed JSON file (created by calculate.py)
         json_path = os.path.join(PROCESSED_DATA_DIR, f"{symbol}.json")
         
         if not os.path.exists(json_path):
-            print(f"  No processed data for {symbol}, skipping...")
+            print(f"❌ No processed data found")
             continue
         
         with open(json_path, 'r') as f:
@@ -31,7 +35,7 @@ for symbol in stocks["SYMBOL"]:
         # Extract data from the JSON
         candles = data.get('candles', [])
         if len(candles) < 200:
-            print(f"  Insufficient candles ({len(candles)}) for {symbol}")
+            print(f"⚠️ Insufficient candles ({len(candles)}), skipping")
             continue
         
         # Get latest prices
@@ -81,6 +85,14 @@ for symbol in stocks["SYMBOL"]:
         
         score = round(symmetry_score, 2)
         
+        # Determine trend strength
+        if latest_close > ema200:
+            trend = "BULLISH"
+        elif latest_close < ema200:
+            trend = "BEARISH"
+        else:
+            trend = "NEUTRAL"
+        
         # Store results
         results.append({
             "symbol": symbol,
@@ -92,24 +104,53 @@ for symbol in stocks["SYMBOL"]:
             "ema50": round(ema50, 2),
             "ema100": round(ema100, 2),
             "ema200": round(ema200, 2),
-            "score": score
+            "score": score,
+            "trend": trend,
+            "ema_alignment": "Perfect" if latest_close > ema20 > ema50 > ema100 > ema200 else "Partial"
         })
         
-        print(f"  ✅ {symbol} - Score: {score}, Price: {latest_close}")
+        print(f"✅ Score: {score}, Price: {latest_close}, Trend: {trend}")
         
     except Exception as e:
-        print(f"  ❌ Failed: {symbol} - {e}")
+        print(f"❌ Error: {e}")
 
 # Sort by score (higher = better symmetry + alignment)
 results.sort(key=lambda x: x["score"], reverse=True)
 
+# Add summary statistics
+if results:
+    avg_score = sum(r["score"] for r in results) / len(results)
+    bullish_count = sum(1 for r in results if r["trend"] == "BULLISH")
+    perfect_alignment = sum(1 for r in results if r["ema_alignment"] == "Perfect")
+else:
+    avg_score = 0
+    bullish_count = 0
+    perfect_alignment = 0
+
 final_data = {
     "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    "total_stocks": len(results),
+    "total_stocks_scanned": len(stocks),
+    "total_stocks_analyzed": len(results),
+    "statistics": {
+        "average_score": round(avg_score, 2),
+        "bullish_stocks": bullish_count,
+        "bearish_stocks": len(results) - bullish_count,
+        "perfect_ema_alignment": perfect_alignment
+    },
+    "top_10_stocks": results[:10],  # Top 10 highest scoring stocks
     "data": results
 }
 
 with open("data/results.json", "w") as f:
     json.dump(final_data, f, indent=4)
 
-print(f"\n✅ Done. {len(results)} stocks analyzed and saved to data/results.json")
+print("\n" + "="*60)
+print(f"✅ SCAN COMPLETED!")
+print(f"   Total stocks in NIFTY 500: {len(stocks)}")
+print(f"   Successfully analyzed: {len(results)}")
+print(f"   Average score: {round(avg_score, 2)}")
+print(f"   Bullish stocks: {bullish_count}")
+print(f"   Perfect EMA alignment: {perfect_alignment}")
+print(f"   Top stock: {results[0]['symbol']} with score {results[0]['score']}" if results else "   No stocks analyzed")
+print(f"📁 Results saved to: data/results.json")
+print("="*60)
