@@ -112,46 +112,25 @@ def process_all_stocks():
             # Calculate score
             score = calculate_score(latest_close, ema20, ema50, ema100, ema200)
             
-            # Determine trend and alignment
-            if latest_close > ema200:
-                trend = "BULLISH"
-            elif latest_close < ema200:
-                trend = "BEARISH"
-            else:
-                trend = "NEUTRAL"
-            
-            if latest_close > ema20 > ema50 > ema100 > ema200:
-                alignment = "PERFECT"
-            elif latest_close > ema20 and latest_close > ema50:
-                alignment = "PARTIAL"
-            else:
-                alignment = "WEAK"
-            
-            # Prepare result
+            # Prepare result for frontend
             stock_result = {
                 "symbol": symbol,
-                "date": datetime.now().strftime("%Y-%m-%d"),
                 "price": round(latest_close, 2),
-                "change_percent": round(change_pct, 2),
-                "high": round(latest_high, 2),
+                "change": round(change_pct, 2),
                 "low": round(latest_low, 2),
+                "high": round(latest_high, 2),
                 "ema20": round(ema20, 2),
                 "ema50": round(ema50, 2),
                 "ema100": round(ema100, 2),
                 "ema200": round(ema200, 2),
-                "score": score,
-                "trend": trend,
-                "alignment": alignment,
-                "candles_count": len(candles)
+                "score": score
             }
             
             results.append(stock_result)
-            print(f"[{i}/{len(json_files)}] ✅ {symbol}: Score={score}, Price={latest_close}, Trend={trend}")
             
-            # Save individual stock JSON
-            individual_file = os.path.join(OUTPUT_FOLDER, f"{symbol}.json")
-            with open(individual_file, 'w') as f:
-                json.dump(stock_result, f, indent=2)
+            # Print progress every 10 stocks
+            if i % 10 == 0:
+                print(f"[{i}/{len(json_files)}] ✅ Processed {len(results)} stocks so far...")
             
         except Exception as e:
             print(f"[{i}/{len(json_files)}] ❌ {symbol}: Error - {e}")
@@ -163,43 +142,33 @@ def process_all_stocks():
     # Calculate statistics
     if results:
         avg_score = sum(r["score"] for r in results) / len(results)
-        bullish_count = sum(1 for r in results if r["trend"] == "BULLISH")
-        perfect_count = sum(1 for r in results if r["alignment"] == "PERFECT")
-        top_stock = results[0]['symbol']
-        top_score = results[0]['score']
+        bullish_count = sum(1 for r in results if r["price"] > r["ema200"])
+        high_score_stocks = sum(1 for r in results if r["score"] >= 80)
     else:
-        avg_score = bullish_count = perfect_count = top_score = 0
-        top_stock = "N/A"
+        avg_score = bullish_count = high_score_stocks = 0
     
-    # Save combined results
+    # Save in frontend-friendly format
     final_data = {
         "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "total_stocks_found": len(json_files),
-        "total_stocks_processed": len(results),
-        "skipped_stocks": skipped,
-        "failed_stocks": failed,
+        "total_stocks": len(results),
         "statistics": {
             "average_score": round(avg_score, 2),
             "bullish_stocks": bullish_count,
             "bearish_stocks": len(results) - bullish_count,
-            "perfect_alignment": perfect_count,
-            "highest_score": top_score,
-            "highest_score_stock": top_stock
+            "high_score_stocks": high_score_stocks
         },
-        "top_10_stocks": results[:10],
-        "all_stocks": results
+        "data": results
     }
     
-    # Save combined JSON
-    combined_file = os.path.join(OUTPUT_FOLDER, "all_results.json")
-    with open(combined_file, 'w') as f:
+    # Save to root data folder for frontend
+    with open("data/results.json", "w") as f:
         json.dump(final_data, f, indent=2)
     
-    # Save to root for easy access
-    with open("data/ema_results.json", 'w') as f:
+    # Also save detailed results
+    with open("data/ema_results_detailed.json", "w") as f:
         json.dump(final_data, f, indent=2)
     
-    # Save CSV for Excel viewing
+    # Save CSV for Excel
     if results:
         df_results = pd.DataFrame(results)
         df_results.to_csv("data/ema_results.csv", index=False)
@@ -212,15 +181,12 @@ def process_all_stocks():
     print(f"   Failed: {failed}")
     print(f"   Average Score: {round(avg_score, 2)}")
     print(f"   Bullish Stocks: {bullish_count}")
-    print(f"   Bearish Stocks: {len(results) - bullish_count}")
-    print(f"   Perfect Alignment: {perfect_count}")
+    print(f"   High Score (80+): {high_score_stocks}")
     if results:
-        print(f"   Top Stock: {top_stock} (Score: {top_score})")
+        print(f"   Top Stock: {results[0]['symbol']} (Score: {results[0]['score']})")
     print(f"\n📁 Results saved to:")
-    print(f"   - {OUTPUT_FOLDER}/ (individual stock JSONs)")
-    print(f"   - {OUTPUT_FOLDER}/all_results.json")
-    print(f"   - data/ema_results.json")
-    print(f"   - data/ema_results.csv")
+    print(f"   - data/results.json (for frontend)")
+    print(f"   - data/ema_results.csv (for Excel)")
     print("="*60)
 
 if __name__ == "__main__":
