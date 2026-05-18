@@ -1,197 +1,115 @@
 import pandas as pd
 import json
 import os
-import requests
 from datetime import datetime
 
-# Ensure data directory exists
-os.makedirs("data", exist_ok=True)
-
-# Load stock list
-stocks = pd.read_csv("scanner/nifty500.csv")
-
-# GitHub raw data URL
-GITHUB_RAW_BASE = "https://raw.githubusercontent.com/subhajitdeo/shape.dna/main/data"
-
-def fetch_stock_data(symbol):
-    """Fetch stock data directly from GitHub"""
-    url = f"{GITHUB_RAW_BASE}/{symbol}.NS.json"
-    try:
-        response = requests.get(url, timeout=10)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return None
-    except Exception as e:
-        print(f"  Fetch error: {e}")
-        return None
-
-def parse_candles(data):
-    """Parse Yahoo Finance JSON format into rows"""
-    rows = []
+def calculate_ema_from_processed():
+    """Read processed JSON files and calculate EMA scores"""
     
-    if isinstance(data, dict):
-        result = data.get('chart', {}).get('result', [])
-        if not result:
-            return []
-        quotes = result[0].get('indicators', {}).get('quote', [{}])[0]
-        timestamps = result[0].get('timestamp', [])
-        for i in range(len(timestamps)):
-            o = quotes.get('open', [None])[i]
-            h = quotes.get('high', [None])[i]
-            l = quotes.get('low', [None])[i]
-            c = quotes.get('close', [None])[i]
-            v = quotes.get('volume', [None])[i]
-            if None not in (o, h, l, c, v):
-                rows.append({
-                    'time': pd.Timestamp(timestamps[i], unit='s').strftime('%Y-%m-%d'),
-                    'open': float(o), 'high': float(h), 'low': float(l),
-                    'close': float(c), 'volume': int(v)
-                })
-    return rows
-
-def calculate_ema(closes, period):
-    """Calculate EMA"""
-    if len(closes) < period:
-        return closes[-1] if closes else 0
-    alpha = 2 / (period + 1)
-    result = [closes[0]]
-    for val in closes[1:]:
-        result.append(alpha * val + (1 - alpha) * result[-1])
-    return result[-1]
-
-results = []
-
-print(f"📊 Scanning stocks from GitHub...")
-print(f"📈 Total stocks in NIFTY 500: {len(stocks)}")
-
-for index, row in stocks.iterrows():
-    symbol = row["SYMBOL"]
-    try:
-        print(f"[{index+1}/{len(stocks)}] Scanning {symbol}...", end=" ")
+    processed_dir = "data/processed"
+    results = []
+    
+    # Get all JSON files from processed folder
+    if not os.path.exists(processed_dir):
+        print(f"❌ Processed directory not found: {processed_dir}")
+        return
+    
+    json_files = [f for f in os.listdir(processed_dir) if f.endswith('.json')]
+    print(f"📊 Found {len(json_files)} processed JSON files")
+    
+    for json_file in json_files:
+        symbol = json_file.replace('.json', '')
         
-        # Fetch data directly from GitHub
-        data = fetch_stock_data(symbol)
-        
-        if not data:
-            print(f"❌ No data found")
-            continue
-        
-        # Parse candles
-        candles = parse_candles(data)
-        
-        if len(candles) < 200:
-            print(f"⚠️ Insufficient candles ({len(candles)}), skipping")
-            continue
-        
-        # Get latest prices
-        latest_close = candles[-1]['close']
-        
-        # Calculate change from previous day
-        if len(candles) >= 2:
-            prev_close = candles[-2]['close']
-            change_pct = ((latest_close - prev_close) / prev_close) * 100
-        else:
-            change_pct = 0
-        
-        # Get latest high/low
-        latest_high = candles[-1]['high']
-        latest_low = candles[-1]['low']
-        
-        # Calculate EMAs
-        closes = [c['close'] for c in candles]
-        ema20 = calculate_ema(closes, 20)
-        ema50 = calculate_ema(closes, 50)
-        ema100 = calculate_ema(closes, 100)
-        ema200 = calculate_ema(closes, 200)
-        
-        # ----- Score out of 100 based on sequence + symmetric gaps -----
-        if latest_close > ema20 > ema50 > ema100 > ema200:
-            gaps = [
-                latest_close - ema20,
-                ema20 - ema50,
-                ema50 - ema100,
-                ema100 - ema200
-            ]
-            mean_gap = sum(gaps) / len(gaps)
-            deviations = [abs(g - mean_gap) for g in gaps]
-            max_deviation = max(deviations)
-            if mean_gap > 0:
-                symmetry_score = max(0, 100 * (1 - (max_deviation / mean_gap)))
+        try:
+            with open(os.path.join(processed_dir, json_file), 'r') as f:
+                data = json.load(f)
+            
+            # Extract EMAs from indicators (already calculated)
+            indicators = data.get('indicators', {})
+            latest_price = data.get('latest_price', 0)
+            
+            ema20 = indicators.get('EMA20', {}).get('value', 0)
+            ema50 = indicators.get('EMA50', {}).get('value', 0)
+            ema100 = indicators.get('EMA100', {}).get('value', 0)
+            ema200 = indicators.get('EMA200', {}).get('value', 0)
+            
+            # Skip if any EMA is 0
+            if ema20 == 0 or ema50 == 0 or ema100 == 0 or ema200 == 0:
+                print(f"⚠️ {symbol}: Missing EMA values")
+                continue
+            
+            # Calculate symmetry score
+            if latest_price > ema20 > ema50 > ema100 > ema200:
+                gaps = [
+                    latest_price - ema20,
+                    ema20 - ema50,
+                    ema50 - ema100,
+                    ema100 - ema200
+                ]
+                mean_gap = sum(gaps) / len(gaps)
+                if mean_gap > 0:
+                    deviations = [abs(g - mean_gap) for g in gaps]
+                    max_deviation = max(deviations)
+                    score = max(0, 100 * (1 - (max_deviation / mean_gap)))
+                else:
+                    score = 0
             else:
-                symmetry_score = 0
-        else:
-            symmetry_score = 0
-        
-        score = round(symmetry_score, 2)
-        
-        # Determine trend strength
-        if latest_close > ema200:
-            trend = "BULLISH"
-        elif latest_close < ema200:
-            trend = "BEARISH"
-        else:
-            trend = "NEUTRAL"
-        
-        # Store results
-        results.append({
-            "symbol": symbol,
-            "price": round(latest_close, 2),
-            "change": round(change_pct, 2),
-            "low": round(latest_low, 2),
-            "high": round(latest_high, 2),
-            "ema20": round(ema20, 2),
-            "ema50": round(ema50, 2),
-            "ema100": round(ema100, 2),
-            "ema200": round(ema200, 2),
-            "score": score,
-            "trend": trend,
-            "ema_alignment": "Perfect" if latest_close > ema20 > ema50 > ema100 > ema200 else "Partial"
-        })
-        
-        print(f"✅ Score: {score}, Price: {latest_close}")
-        
-    except Exception as e:
-        print(f"❌ Error: {e}")
+                score = 0
+            
+            results.append({
+                "symbol": symbol,
+                "price": round(latest_price, 2),
+                "ema20": round(ema20, 2),
+                "ema50": round(ema50, 2),
+                "ema100": round(ema100, 2),
+                "ema200": round(ema200, 2),
+                "score": round(score, 2),
+                "alignment": "Perfect" if latest_price > ema20 > ema50 > ema100 > ema200 else "Broken",
+                "trend": "BULLISH" if latest_price > ema200 else "BEARISH"
+            })
+            
+            print(f"✅ {symbol}: Score={round(score, 2)}, Price={latest_price}")
+            
+        except Exception as e:
+            print(f"❌ {symbol}: Error - {e}")
+    
+    # Sort by score (highest first)
+    results.sort(key=lambda x: x["score"], reverse=True)
+    
+    # Calculate statistics
+    if results:
+        avg_score = sum(r["score"] for r in results) / len(results)
+        bullish = sum(1 for r in results if r["trend"] == "BULLISH")
+        perfect = sum(1 for r in results if r["alignment"] == "Perfect")
+    else:
+        avg_score = bullish = perfect = 0
+    
+    # Save results
+    output = {
+        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "total_stocks": len(results),
+        "statistics": {
+            "average_score": round(avg_score, 2),
+            "bullish_stocks": bullish,
+            "bearish_stocks": len(results) - bullish,
+            "perfect_alignment": perfect
+        },
+        "top_10": results[:10],
+        "all_stocks": results
+    }
+    
+    os.makedirs("data", exist_ok=True)
+    with open("data/results.json", "w") as f:
+        json.dump(output, f, indent=2)
+    
+    print(f"\n{'='*50}")
+    print(f"✅ EMA CALCULATION COMPLETE")
+    print(f"   Stocks processed: {len(results)}")
+    print(f"   Average score: {round(avg_score, 2)}")
+    print(f"   Bullish: {bullish}, Bearish: {len(results)-bullish}")
+    print(f"   Perfect alignment: {perfect}")
+    print(f"📁 Results saved to: data/results.json")
+    print(f"{'='*50}")
 
-# Sort by score
-results.sort(key=lambda x: x["score"], reverse=True)
-
-# Add summary statistics
-if results:
-    avg_score = sum(r["score"] for r in results) / len(results)
-    bullish_count = sum(1 for r in results if r["trend"] == "BULLISH")
-    perfect_alignment = sum(1 for r in results if r["ema_alignment"] == "Perfect")
-else:
-    avg_score = 0
-    bullish_count = 0
-    perfect_alignment = 0
-
-final_data = {
-    "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    "total_stocks_scanned": len(stocks),
-    "total_stocks_analyzed": len(results),
-    "statistics": {
-        "average_score": round(avg_score, 2),
-        "bullish_stocks": bullish_count,
-        "bearish_stocks": len(results) - bullish_count,
-        "perfect_ema_alignment": perfect_alignment
-    },
-    "top_10_stocks": results[:10],
-    "data": results
-}
-
-with open("data/results.json", "w") as f:
-    json.dump(final_data, f, indent=4)
-
-print("\n" + "="*60)
-print(f"✅ SCAN COMPLETED!")
-print(f"   Total stocks in NIFTY 500: {len(stocks)}")
-print(f"   Successfully analyzed: {len(results)}")
-print(f"   Average score: {round(avg_score, 2)}")
-print(f"   Bullish stocks: {bullish_count}")
-print(f"   Perfect EMA alignment: {perfect_alignment}")
-if results:
-    print(f"   Top stock: {results[0]['symbol']} with score {results[0]['score']}")
-print(f"📁 Results saved to: data/results.json")
-print("="*60)
+if __name__ == "__main__":
+    calculate_ema_from_processed()
