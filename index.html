@@ -1,28 +1,41 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>SONALIKA</title>
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>SONALIKA</title>
+    <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<div class="container">
-  <header class="topbar">
-    <div>
-      <h1>EMA Structure Scanner</h1>
+    <div class="container">
+        <header class="topbar">
+            <div>
+                <h1>EMA Structure Scanner</h1>
+            </div>
+            <div class="top-controls">
+                <!-- 🔍 SEARCH BAR -->
+                <div class="search-wrapper">
+                    <span class="search-icon">⌕</span>
+                    <input
+                    type="text"
+                    id="searchInput"
+                    placeholder="Search symbol..."
+                    autocomplete="off"
+                    spellcheck="false"
+                    />
+                    <button class="clear-btn" id="clearSearch" aria-label="Clear search">✕</button>
+                </div>
+                <select id="sortSelect">
+                    <option value="score">Trend Strength</option>
+                    <option value="change">Change % High → Low</option>
+                    <option value="symbol">Name A–Z</option>
+                </select>
+            </div>
+        </header>
+
+        <div class="update-bar" id="updateBar">● Last update: Loading...</div>
+        <div id="stockContainer"></div>
     </div>
-    <div class="top-controls">
-      <select id="sortSelect">
-        <option value="score">Trend Strength</option>
-        <option value="change">Change % High → Low</option>
-        <option value="symbol">Name A-Z</option>
-      </select>
-    </div>
-  </header>
-  <div class="update-bar" id="updateBar">● Last update: Loading...</div>
-  <div id="stockContainer"></div>
-</div>
-<script src="script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
